@@ -1,0 +1,10 @@
+# dependencies (none expected — zero-dependency plugin, but just in case)
+node_modules/
+
+# local room state / secrets
+.dsh-shared-session/
+*.local.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

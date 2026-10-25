@@ -1,0 +1,12 @@
+{
+  "name": "dsh-shared-session",
+  "version": "0.1.0",
+  "description": "Share a live session with teammates: the host's model and tools do all the work, guests watch in real time and queue prompts; guest-triggered writes/shell/network require host approval. Includes a zero-dependency self-hostable relay.",
+  "author": {
+    "name": "Seraph.Cai"
+  },
+  "commands": "./commands",
+  "skills": "./skills",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}

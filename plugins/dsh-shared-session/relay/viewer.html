@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared Session</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #2d333b; --fg: #e6edf3;
+    --dim: #8b949e; --accent: #4493f8; --green: #3fb950; --red: #f85149;
+    --yellow: #d29922; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #status { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); }
+  #status.on { background: var(--green); } #status.off { background: var(--red); }
+  #meta { color: var(--dim); font-size: 12px; }
+  #mode { font-size: 11px; border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; color: var(--dim); }
+  main { display: flex; height: calc(100vh - 45px); }
+  #feed { flex: 1; overflow-y: auto; padding: 16px 20px 60px; max-width: 980px; margin: 0 auto; }
+  #side { width: 220px; border-left: 1px solid var(--border); padding: 14px; color: var(--dim);
+    font-size: 12px; overflow-y: auto; }
+  #side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 8px; }
+  .member { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: var(--fg); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.on { background: var(--green); }
+  .banner { border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+    padding: 8px 12px; margin: 10px 0; color: var(--dim); font-size: 12px; }
+  .banner.closed { color: var(--red); border-color: var(--red); }
+  .msg { margin: 10px 0; }
+  .who { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+  .bubble { border-radius: 10px; padding: 8px 12px; background: var(--panel);
+    border: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; }
+  .bubble.host { border-left: 3px solid var(--accent); }
+  .bubble.guest { border-left: 3px solid #a371f7; }
+  .bubble.side { opacity: .65; font-style: italic; }
+  .assistant { white-space: pre-wrap; word-break: break-word; padding: 4px 2px; }
+  .thinking { color: var(--dim); font-style: italic; white-space: pre-wrap; padding: 2px 2px 6px;
+    border-left: 2px solid var(--border); margin-left: 4px; padding-left: 10px; font-size: 13px; }
+  .turnend { border-top: 1px dashed var(--border); margin: 14px 40px; }
+  details.tool { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0;
+    background: var(--panel); }
+  details.tool summary { cursor: pointer; padding: 7px 12px; font-family: var(--mono); font-size: 12.5px;
+    color: var(--accent); list-style: none; }
+  details.tool summary::before { content: "⚙ "; }
+  details.tool .body { padding: 0 12px 10px; font-family: var(--mono); font-size: 12px;
+    white-space: pre-wrap; word-break: break-word; color: var(--dim); }
+  .ok-badge { color: var(--green); } .fail-badge { color: var(--red); }
+  .approval { border: 1px solid var(--yellow); background: rgba(210,153,34,.08);
+    border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .approval .sum { font-family: var(--mono); font-size: 12px; white-space: pre-wrap;
+    word-break: break-word; margin: 6px 0; }
+  .approval button { font: inherit; font-size: 12px; margin-right: 8px; padding: 4px 12px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
+  .approval button.allow { border-color: var(--green); color: var(--green); }
+  .approval button.deny { border-color: var(--red); color: var(--red); }
+  .approval .result { margin-top: 6px; font-size: 12px; }
+  .sysline { color: var(--dim); font-size: 12px; text-align: center; margin: 8px 0; }
+  .warn { color: var(--yellow); font-size: 12px; text-align: center; margin: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <span id="status" title="connection"></span>
+  <h1>Shared Session</h1>
+  <span id="meta">loading…</span>
+  <span id="mode"></span>
+</header>
+<main>
+  <div id="feed"><div class="banner" id="offline" style="display:none"></div></div>
+  <div id="side"><h2>Members</h2><div id="members"></div>
+    <p style="margin-top:14px">Guests: open this link in your own ZCode session and run <code>/join &lt;link&gt;</code> to send prompts.</p>
+  </div>
+</main>
+<script>
+const roomId = '__ROOM_ID__';
+const inviteToken = '__INVITE_TOKEN__';
+const params = new URLSearchParams(location.search);
+const hostToken = params.get('host') || '';
+const feed = document.getElementById('feed');
+const statusEl = document.getElementById('status');
+const membersEl = document.getElementById('members');
+const metaEl = document.getElementById('meta');
+const modeEl = document.getElementById('mode');
+let lastSeq = 0;
+const toolCards = new Map();   // callId -> details element
+const approvalEls = new Map(); // requestId -> element
+
+function nearBottom() { return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120; }
+function autoscroll(stick) { if (stick) feed.scrollTop = feed.scrollHeight; }
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function who(from) { return from ? `${from.displayName}` : 'system'; }
+
+function render(ev) {
+  const stick = nearBottom();
+  const p = ev.payload || {};
+  const from = ev.from || {};
+  switch (ev.type) {
+    case 'chat/user': {
+      const w = el('div', 'msg');
+      w.appendChild(el('div', 'who', `${who(from)} · into agent`));
+      w.appendChild(el('div', `bubble ${from.role === 'host' ? 'host' : 'guest'}`, p.text || ''));
+      feed.appendChild(w); break;
+    }
+    case 'chat/side': {
+      const w = el('div', 'msg');
+      w.appendChild(el('div', 'who', `${who(from)} · side chat`));
+      w.appendChild(el('div', 'bubble side', p.text || ''));
+      feed.appendChild(w); break;
+    }
+    case 'chat/rejected': feed.appendChild(el('div', 'warn', `⚠ ${p.reason || 'message rejected'}`)); break;
+    case 'assistant/delta': {
+      if (p.reasoning) feed.appendChild(el('div', 'thinking', p.reasoning));
+      if (p.text) feed.appendChild(el('div', 'assistant', p.text));
+      break;
+    }
+    case 'assistant/done': feed.appendChild(el('div', 'turnend')); break;
+    case 'tool/call': {
+      const d = el('details', 'tool');
+      d.appendChild(el('summary', null, `${p.name}`));
+      d.appendChild(el('div', 'body', p.argsPreview || ''));
+      feed.appendChild(d);
+      if (p.callId) toolCards.set(p.callId, d);
+      break;
+    }
+    case 'tool/result': {
+      const card = p.callId ? toolCards.get(p.callId) : null;
+      const badge = p.ok ? '✓ ok' : '✗ failed';
+      const text = `--- result [${badge}] ---\n${p.preview || ''}`;
+      if (card) card.querySelector('.body').textContent += '\n' + text;
+      else {
+        const d = el('details', 'tool');
+        d.appendChild(el('summary', null, `${p.name || 'tool'} ${p.ok ? '✓' : '✗'}`));
+        d.appendChild(el('div', 'body', text));
+        feed.appendChild(d);
+      }
+      break;
+    }
+    case 'control/approval': {
+      const a = el('div', 'approval');
+      a.appendChild(el('div', null, `🔔 Approval requested by ${p.displayName || p.memberId || 'guest'} (${p.mode || 'relay'})`));
+      a.appendChild(el('div', 'sum', p.summary || ''));
+      const resultEl = el('div', 'result', '');
+      if (hostToken && p.mode !== 'native') {
+        const btns = el('div');
+        const mk = (label, cls, decision) => {
+          const b = el('button', cls, label);
+          b.onclick = async () => {
+            b.disabled = true;
+            await fetch(`/api/rooms/${roomId}/events`, {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ token: hostToken, type: 'control/approval-result',
+                payload: { requestId: p.requestId, decision } })
+            });
+            resultEl.textContent = `→ you chose: ${decision}`;
+          };
+          return b;
+        };
+        btns.appendChild(mk('Allow once', 'allow', 'allow'));
+        btns.appendChild(mk('Always (this guest)', 'allow', 'allow-always'));
+        btns.appendChild(mk('Deny', 'deny', 'deny'));
+        a.appendChild(btns);
+      } else if (p.mode === 'native') {
+        resultEl.textContent = 'Host decides via the native ZCode permission dialog — no action needed here.';
+      }
+      a.appendChild(resultEl);
+      feed.appendChild(a);
+      approvalEls.set(p.requestId, a);
+      break;
+    }
+    case 'control/approval-result': {
+      const a = approvalEls.get(p.requestId);
+      if (a) a.querySelector('.result').textContent = `→ decision: ${p.decision}`;
+      break;
+    }
+    case 'member/join': feed.appendChild(el('div', 'sysline', `${p.displayName || p.memberId} joined`)); break;
+    case 'member/leave': feed.appendChild(el('div', 'sysline', `${p.displayName || p.memberId} left`)); break;
+    case 'member/kicked': feed.appendChild(el('div', 'sysline', `${p.displayName || p.memberId} was kicked`)); break;
+    case 'room/closed': {
+      const b = el('div', 'banner closed', 'This room was closed by the host.');
+      feed.appendChild(b); break;
+    }
+    default: break;
+  }
+  autoscroll(stick);
+}
+
+async function pollRoom() {
+  try {
+    const r = await fetch(`/api/rooms/${roomId}?token=${encodeURIComponent(inviteToken)}`);
+    if (!r.ok) return;
+    const info = await r.json();
+    metaEl.textContent = `host: ${info.hostName}${info.closed ? ' · closed' : info.hostOnline ? '' : ' · host offline'}`;
+    modeEl.textContent = info.mode === 'ask-all' ? 'ask everything' : 'default policy';
+    const off = document.getElementById('offline');
+    if (!info.closed && !info.hostOnline) { off.style.display = 'block'; off.textContent = 'Host is currently offline — history below is the latest known state. New prompts are rejected until the host returns.'; }
+    else off.style.display = 'none';
+    membersEl.textContent = '';
+    for (const m of info.members || []) {
+      const row = el('div', 'member');
+      row.appendChild(el('span', `dot ${m.online ? 'on' : ''}`));
+      row.appendChild(el('span', null, `${m.displayName} (${m.role}${m.viewer ? ', viewer' : ''})`));
+      membersEl.appendChild(row);
+    }
+  } catch { /* ignore */ }
+}
+
+function connect() {
+  const url = `/api/rooms/${roomId}/stream?since=${lastSeq}&token=${encodeURIComponent(inviteToken)}`;
+  const es = new EventSource(url);
+  es.onopen = () => { statusEl.className = 'on'; };
+  es.onerror = () => { statusEl.className = 'off'; };
+  es.addEventListener('message', e => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (ev.seq > lastSeq) lastSeq = ev.seq;
+      render(ev);
+    } catch { /* ignore */ }
+  });
+}
+connect();
+pollRoom();
+setInterval(pollRoom, 8000);
+</script>
+</body>
+</html>
