@@ -1,0 +1,35 @@
+{
+  "name": "dsh-shared-session",
+  "version": "0.1.0",
+  "description": "Shared live sessions for DeepSeek Harness (dsh/ZCode): the host's model and tools do all the work, guests watch in real time and queue prompts that are injected as [GuestName]: text, guest-triggered write/shell/network actions require host approval.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caimc21069065-prog/dsh-shared-session.git"
+  },
+  "homepage": "https://github.com/caimc21069065-prog/dsh-shared-session#readme",
+  "bugs": {
+    "url": "https://github.com/caimc21069065-prog/dsh-shared-session/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "zcode",
+    "shared-session",
+    "pair-programming",
+    "collaboration"
+  ],
+  "scripts": {
+    "test": "node plugins/dsh-shared-session/test/e2e.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "plugin": "./plugins/dsh-shared-session"
+    }
+  }
+}
